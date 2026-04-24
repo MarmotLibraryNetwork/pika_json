@@ -1,0 +1,7 @@
+name: 'Pika JSON'
+type: module
+description: 'Marmot Library Network. Provides custom JSON responses for Islandora nodes.'
+core_version_requirement: ^10 || ^11
+package: Custom
+dependencies:
+  - drupal:node

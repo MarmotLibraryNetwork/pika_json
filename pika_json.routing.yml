@@ -1,0 +1,21 @@
+pika_json.node_json:
+  path: '/pika-json/node/{node}'
+  defaults:
+    _controller: '\Drupal\pika_json\Controller\PikaJsonController::nodeJson'
+    _title: 'Pika JSON for Node'
+  requirements:
+    _permission: 'access content'
+    node: \d+
+  options:
+    _format: 'json'
+
+pika_json.term_json:
+  path: '/pika-json/taxonomy/{taxonomy_term}'
+  defaults:
+    _controller: '\Drupal\pika_json\Controller\PikaJsonController::termJson'
+    _title: 'Pika JSON for Taxonomy Term'
+  requirements:
+    _permission: 'access content'
+    taxonomy_term: \d+
+  options:
+    _format: 'json'

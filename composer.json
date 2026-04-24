@@ -1,0 +1,15 @@
+{
+    "name": "marmot/pika_json",
+    "description": "Marmot Library Network. Provides custom JSON responses for Islandora nodes.",
+    "type": "drupal-module",
+    "license": "GPL-2.0-or-later",
+    "authors": [
+        {
+            "name": "Chris Froese",
+            "email": "chris@marmot.org"
+        }
+    ],
+    "require": {
+        "drupal/core": "^10 || ^11"
+    }
+}
