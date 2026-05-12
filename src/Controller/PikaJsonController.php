@@ -93,15 +93,7 @@ class PikaJsonController extends ControllerBase implements ContainerInjectionInt
   /**
    * Returns a JSON representation of a node and its related media.
    *
-   * This is the main method of the class. This method serializes all relevant 
-   * fields of the given node, including referenced taxonomy terms, paragraphs, 
-   * and media entities. It handles flattening of simple field values and extracts 
-   * media URLs and MIME types for file or image fields within the media entities.
-   * 
    * Refer to pika_json.routing.yml.
-   * 
-   * Uses Islandora Utility class.
-   * @see https://github.com/Islandora/islandora/blob/2.x/src/IslandoraUtils.php#L173
    *
    * @param \Drupal\node\Entity\Node $node
    *   The node entity to be serialized to JSON.
@@ -111,8 +103,72 @@ class PikaJsonController extends ControllerBase implements ContainerInjectionInt
    */
   public function nodeJson(Node $node): JsonResponse
   {
+    return new JsonResponse($this->serializeNode($node));
+  }
+
+  /**
+   * Returns a paginated JSON list of child nodes for the given parent node.
+   *
+   * Children are nodes that reference the parent via field_member_of. Each child
+   * is serialized identically to a full nodeJson() response.
+   *
+   * Accepts GET parameters:
+   *   - number (int, default 10): items per page
+   *   - page   (int, default 1):  1-indexed page number
+   *
+   * @param \Drupal\node\Entity\Node $node
+   *   The parent node.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   */
+  public function nodeChildrenJson(Node $node): JsonResponse
+  {
+    $request = \Drupal::request();
+    $number  = max(1, (int) $request->query->get('number', 10));
+    $page    = max(1, (int) $request->query->get('page', 1));
+    $offset  = ($page - 1) * $number;
+
+    $storage = \Drupal::entityTypeManager()->getStorage('node');
+
+    $total = (int) $storage->getQuery()
+      ->accessCheck(TRUE)
+      ->condition(IslandoraUtils::MEMBER_OF_FIELD, $node->id())
+      ->count()
+      ->execute();
+
+    $nids = $storage->getQuery()
+      ->accessCheck(TRUE)
+      ->condition(IslandoraUtils::MEMBER_OF_FIELD, $node->id())
+      ->range($offset, $number)
+      ->execute();
+
+    $children = empty($nids)
+      ? []
+      : array_map([$this, 'serializeNode'], $storage->loadMultiple($nids));
+
+    return new JsonResponse([
+      'parent_nid' => (int) $node->id(),
+      'page'       => $page,
+      'count'      => count($children),
+      'total'      => $total,
+      'children'   => array_values($children),
+    ]);
+  }
+
+  /**
+   * Serializes a node and its Islandora media into an array.
+   *
+   * Used by both nodeJson() and nodeChildrenJson(). Does not embed child nodes
+   * to avoid recursion.
+   *
+   * @param \Drupal\node\Entity\Node $node
+   *   The node entity to serialize.
+   *
+   * @return array
+   */
+  private function serializeNode(Node $node): array
+  {
     $data = [];
-    // Process node fields
     foreach ($node->getFields() as $field_name => $field) {
       if ($field->isEmpty()) {
         $data[$field_name] = null;
@@ -122,26 +178,26 @@ class PikaJsonController extends ControllerBase implements ContainerInjectionInt
         continue;
       }
 
-      $def = $field->getFieldDefinition();
-      $type = $def->getType();
+      $def    = $field->getFieldDefinition();
+      $type   = $def->getType();
       $target = $def->getSetting('target_type');
       // \Drupal::logger('pika_json')->debug('Processing field: @f (@t)', ['@f' => $field_name, '@t' => $type]);
-      
+
       // Taxonomy
       if (($type === 'entity_reference' || $type === 'typed_relation') && $target === 'taxonomy_term') {
         $data[$field_name] = $this->parseTaxonomyField($field, $type === 'typed_relation');
-      } 
-      // Paragrahs
+      }
+      // Paragraphs
       elseif ($type === 'entity_reference_revisions' && $target === 'paragraph') {
         $items = array_map([$this, 'parseParagraph'], $field->referencedEntities());
         $data[$field_name] = count($items) === 1 ? $items[0] : $items;
-      } 
-      // Simple
+      }
+      // Simple scalars
       elseif (in_array($type, ['string', 'string_long', 'text', 'text_long', 'integer', 'boolean'])) {
         $values = array_column($field->getValue(), 'value');
         $data[$field_name] = count($values) === 1 ? $values[0] : $values;
       }
-      // default
+      // Default
       else {
         $value = $field->getValue();
         if (is_array($value) && count($value) === 1 && is_array($value[0])) {
@@ -153,23 +209,10 @@ class PikaJsonController extends ControllerBase implements ContainerInjectionInt
       }
     }
 
-    // Attach Islandora media
     $media_items = $this->islandoraUtils->getMedia($node);
     $data['media'] = array_map([$this, 'parseMedia'], $media_items);
 
-    // Attach child nodes only if parent is a Compound Object or Collection
-    if ($node->hasField('field_model') && !$node->get('field_model')->isEmpty()) {
-      
-      $model_term = $node->get('field_model')->entity;
-      
-      if ($model_term && ($model_term->label() === 'Compound Object' || 
-        $model_term->label() === 'Collection' )) {
-        $children = $this->getChildNodes($node);
-        $data['children'] = array_map([$this, 'parseChildNode'], $children);
-      }
-    }
-
-    return new JsonResponse($data);
+    return $data;
   }
 
   /**
