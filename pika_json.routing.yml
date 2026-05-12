@@ -19,3 +19,14 @@ pika_json.term_json:
     taxonomy_term: \d+
   options:
     _format: 'json'
+
+pika_json.node_children_json:
+  path: '/pika-json/node/{node}/children'
+  defaults:
+    _controller: '\Drupal\pika_json\Controller\PikaJsonController::nodeChildrenJson'
+    _title: 'Pika JSON Children for Node'
+  requirements:
+    _permission: 'access content'
+    node: \d+
+  options:
+    _format: 'json'
