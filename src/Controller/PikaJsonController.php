@@ -508,7 +508,86 @@ class PikaJsonController extends ControllerBase implements ContainerInjectionInt
       }
     }
 
+    if ($taxonomy_term->bundle() === 'person') {
+      $data['field_related_person_reverse'] = $this->findReverseRelatedPersons($taxonomy_term);
+    }
+
     return new JsonResponse($data);
+  }
+
+  /**
+   * Finds related_person_bundle paragraphs on other terms that reference this term.
+   *
+   * Returns each paragraph in the same shape as field_related_person_paragraph,
+   * plus a `host` key describing the term that owns the paragraph and a
+   * `linked_forward` flag indicating whether this term already links back to
+   * the host through its own field_related_person_paragraph.
+   *
+   * Only taxonomy term hosts are included; node hosts are skipped for now.
+   * The relation on field_related_person describes this term from the host's
+   * side (e.g. "Child" means this term is the host's child).
+   *
+   * @param \Drupal\taxonomy\Entity\Term $term
+   *   The term being serialized.
+   *
+   * @return array|null
+   *   A single item, an array of items, or null if nothing references the term.
+   */
+  private function findReverseRelatedPersons(Term $term): array|null
+  {
+    $tid = $term->id();
+
+    // Persons this term already links to via its own paragraphs.
+    $forward_tids = [];
+    if ($term->hasField('field_related_person_paragraph')) {
+      foreach ($term->get('field_related_person_paragraph')->referencedEntities() as $own) {
+        if ($own->hasField('field_related_person')) {
+          foreach ($own->get('field_related_person') as $item) {
+            $forward_tids[] = (string) $item->target_id;
+          }
+        }
+      }
+    }
+
+    $storage = \Drupal::entityTypeManager()->getStorage('paragraph');
+    $pids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'related_person_bundle')
+      ->condition('field_related_person.target_id', $tid)
+      ->condition('parent_type', 'taxonomy_term')
+      ->execute();
+
+    $items = [];
+    foreach ($storage->loadMultiple($pids) as $paragraph) {
+      $host = $paragraph->getParentEntity();
+      if (!$host instanceof Term || $host->id() == $tid) {
+        continue;
+      }
+
+      // Skip orphaned paragraphs no longer attached to their host.
+      $parent_field = $paragraph->get('parent_field_name')->value;
+      if (!$parent_field || !$host->hasField($parent_field)) {
+        continue;
+      }
+      $attached_ids = array_column($host->get($parent_field)->getValue(), 'target_id');
+      if (!in_array($paragraph->id(), $attached_ids)) {
+        continue;
+      }
+
+      $item = $this->parseParagraph($paragraph);
+      $host_data = ['tid' => $host->id(), 'name' => $host->label(), 'vocabulary' => $host->bundle()];
+      if ($host->hasField('field_thumbnail') && !$host->get('field_thumbnail')->isEmpty()) {
+        $host_data['field_thumbnail'] = $this->parseThumbnailField($host->get('field_thumbnail'));
+      }
+      $item['host'] = $host_data;
+      $item['linked_forward'] = in_array((string) $host->id(), $forward_tids, TRUE);
+      $items[] = $item;
+    }
+
+    if (empty($items)) {
+      return null;
+    }
+    return count($items) === 1 ? $items[0] : $items;
   }
 
   /**

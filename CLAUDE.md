@@ -104,6 +104,15 @@ Single-item arrays are unwrapped to a scalar/object throughout — only multi-va
 - After processing node fields, `nodeJson()` calls `$this->islandoraUtils->getMedia($node)` to attach media.
 - For nodes whose `field_model` term label is `Compound Object` or `Collection`, child nodes (those with `field_member_of` pointing to the parent) are fetched via an entity query and attached as `children`.
 
+### Reverse related-person links
+
+For `person` terms, `termJson()` adds `field_related_person_reverse`: `related_person_bundle` paragraphs on *other* taxonomy terms whose `field_related_person` points at this term (built by `findReverseRelatedPersons()`). Each item has the same shape as a `field_related_person_paragraph` item, plus:
+
+- `host` — the term that owns the paragraph (`tid`, `name`, `vocabulary`, optional `field_thumbnail`)
+- `linked_forward` — `true` if this term already links to the host through its own `field_related_person_paragraph`
+
+The relation on `field_related_person` is as stored, i.e. it describes this term from the host's side. Orphaned paragraphs (no longer attached to their host) are skipped. Node (islandora_object) hosts are not included yet. The key is `null` when nothing references the term.
+
 ### Fields excluded from output
 
 The `$fieldsToSkip` list suppresses noisy Drupal internals (`revision_log`, `uid`, `promote`, `sticky`, `default_langcode`, `uuid`, etc.) from all serialized entities.
